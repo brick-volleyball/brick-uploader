@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>BRICK アップローダー</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a2332">
+<style>
+  :root{
+    --court-navy: #1a2332;
+    --court-navy-light: #26334a;
+    --line-white: #f5f3ee;
+    --ball-orange: #e8641c;
+    --ball-orange-dim: #b84f16;
+    --mute-gray: #7b8494;
+    --success-green: #2f9e5c;
+    --error-red: #d94848;
+    --border-soft: rgba(245,243,238,0.12);
+  }
+
+  *{ box-sizing: border-box; }
+
+  body{
+    margin:0;
+    background: var(--court-navy);
+    color: var(--line-white);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    min-height: 100vh;
+    padding-bottom: 40px;
+  }
+
+  /* ---------- header ---------- */
+  header{
+    padding: 28px 20px 22px;
+    border-bottom: 1px solid var(--border-soft);
+    position: sticky;
+    top: 0;
+    background: var(--court-navy);
+    z-index: 10;
+  }
+  .logo-row{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+  }
+  .logo-mark{
+    font-weight: 900;
+    font-size: 26px;
+    letter-spacing: 0.5px;
+  }
+  .logo-mark span{ color: var(--ball-orange); }
+  .subtitle{
+    font-size: 12.5px;
+    color: var(--mute-gray);
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .court-line{
+    height: 2px;
+    background: repeating-linear-gradient(90deg, var(--ball-orange) 0 14px, transparent 14px 22px);
+    margin-top: 16px;
+    opacity: 0.85;
+  }
+
+  main{
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 0 16px;
+  }
+
+  /* ---------- auth section ---------- */
+  .auth-card{
+    margin-top: 24px;
+    padding: 20px;
+    background: var(--court-navy-light);
+    border-radius: 14px;
+    border: 1px solid var(--border-soft);
+    text-align:center;
+  }
+  .auth-card p{
+    color: var(--mute-gray);
+    font-size: 13.5px;
+    line-height: 1.7;
+    margin: 6px 0 18px;
+  }
+  .btn{
+    appearance:none;
+    border:none;
+    border-radius: 10px;
+    padding: 13px 22px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor:pointer;
+    transition: transform .12s ease, opacity .12s ease;
+    font-family: inherit;
+  }
+  .btn:active{ transform: scale(0.97); }
+  .btn-primary{
+    background: var(--ball-orange);
+    color: var(--line-white);
+    width: 100%;
+  }
+  .btn-primary:hover{ background: var(--ball-orange-dim); }
+  .btn-primary:disabled{ opacity: .4; cursor:not-allowed; }
+  .btn-ghost{
+    background: transparent;
+    color: var(--mute-gray);
+    border: 1px solid var(--border-soft);
+    font-size: 13px;
+    padding: 8px 14px;
+  }
+
+  .signed-in-bar{
+    display:none;
+    align-items:center;
+    justify-content:space-between;
+    margin-top: 24px;
+    padding: 12px 16px;
+    background: rgba(47,158,92,0.12);
+    border: 1px solid rgba(47,158,92,0.35);
+    border-radius: 10px;
+    font-size: 13px;
+  }
+  .signed-in-bar.active{ display:flex; }
+  .dot{
+    width:8px; height:8px; border-radius:50%;
+    background: var(--success-green);
+    display:inline-block;
+    margin-right:8px;
+  }
+
+  /* ---------- app body (hidden until signed in) ---------- */
+  #app-body{ display:none; }
+  #app-body.active{ display:block; }
+
+  .section-title{
+    font-size: 12px;
+    letter-spacing: 1.5px;
+    color: var(--ball-orange);
+    font-weight: 800;
+    text-transform: uppercase;
+    margin: 30px 0 12px;
+  }
+
+  /* file picker */
+  .drop-zone{
+    border: 2px dashed var(--border-soft);
+    border-radius: 14px;
+    padding: 30px 16px;
+    text-align:center;
+    cursor:pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .drop-zone:hover, .drop-zone.dragover{
+    border-color: var(--ball-orange);
+    background: rgba(232,100,28,0.06);
+  }
+  .drop-zone .icon{ font-size: 30px; margin-bottom: 8px; }
+  .drop-zone p{ margin: 4px 0; color: var(--mute-gray); font-size: 13.5px; }
+  .drop-zone strong{ color: var(--line-white); }
+  input[type=file]{ display:none; }
+
+  /* shared date/playlist config */
+  .config-card{
+    background: var(--court-navy-light);
+    border-radius: 14px;
+    padding: 18px;
+    margin-top: 16px;
+    border: 1px solid var(--border-soft);
+  }
+  .field{ margin-bottom: 16px; }
+  .field:last-child{ margin-bottom:0; }
+  label{
+    display:block;
+    font-size: 12.5px;
+    color: var(--mute-gray);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  input[type=date], input[type=text], select{
+    width:100%;
+    background: var(--court-navy);
+    border: 1px solid var(--border-soft);
+    color: var(--line-white);
+    padding: 11px 12px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: inherit;
+  }
+  input[type=date]:focus, input[type=text]:focus, select:focus{
+    outline: 2px solid var(--ball-orange);
+    outline-offset: 1px;
+  }
+
+  .playlist-row{ display:flex; gap:8px; }
+  .playlist-row select{ flex:1; }
+
+  .visibility-toggle{
+    display:flex;
+    gap:8px;
+  }
+  .vis-btn{
+    flex:1;
+    padding: 10px 4px;
+    border-radius: 8px;
+    border: 1px solid var(--border-soft);
+    background: var(--court-navy);
+    color: var(--mute-gray);
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor:pointer;
+    text-align:center;
+  }
+  .vis-btn.selected{
+    border-color: var(--ball-orange);
+    color: var(--line-white);
+    background: rgba(232,100,28,0.14);
+  }
+
+  /* video queue list */
+  .queue{ margin-top: 16px; display:flex; flex-direction:column; gap:10px; }
+  .video-card{
+    background: var(--court-navy-light);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    padding: 14px;
+  }
+  .video-card-top{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom: 10px;
+  }
+  .video-num{
+    font-variant-numeric: tabular-nums;
+    font-weight: 900;
+    font-size: 15px;
+    color: var(--ball-orange);
+    background: rgba(232,100,28,0.12);
+    width: 30px; height: 30px;
+    border-radius: 7px;
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .video-fname{
+    font-size: 12px;
+    color: var(--mute-gray);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    flex:1;
+  }
+  .video-remove{
+    background:none; border:none; color: var(--mute-gray);
+    font-size: 18px; cursor:pointer; padding: 2px 6px;
+    flex-shrink:0;
+  }
+  .video-remove:hover{ color: var(--error-red); }
+
+  .title-preview{
+    font-variant-numeric: tabular-nums;
+    font-size: 14.5px;
+    font-weight: 700;
+    background: var(--court-navy);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display:flex;
+    align-items:center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .title-preview .fixed{ color: var(--mute-gray); }
+  .title-preview input{
+    width: 52px;
+    padding: 4px 6px;
+    text-align:center;
+    background: var(--court-navy-light);
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    color: var(--ball-orange);
+    font-weight: 900;
+    font-size: 14.5px;
+    font-family: inherit;
+  }
+
+  .progress-track{
+    margin-top: 10px;
+    height: 8px;
+    border-radius: 6px;
+    background: var(--court-navy);
+    overflow:hidden;
+    display:none;
+  }
+  .progress-track.active{ display:block; }
+  .progress-fill{
+    height:100%;
+    width:0%;
+    background: linear-gradient(90deg, var(--ball-orange-dim), var(--ball-orange));
+    transition: width .2s ease;
+  }
+  .status-line{
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--mute-gray);
+    display:none;
+  }
+  .status-line.active{ display:block; }
+  .status-line.done{ color: var(--success-green); }
+  .status-line.error{ color: var(--error-red); }
+
+  .upload-bar{
+    position: sticky;
+    bottom: 0;
+    margin-top: 26px;
+    padding: 14px 0 4px;
+    background: linear-gradient(to top, var(--court-navy) 60%, transparent);
+  }
+
+  .footer-note{
+    text-align:center;
+    color: var(--mute-gray);
+    font-size: 11.5px;
+    margin-top: 30px;
+    line-height:1.6;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-row">
+    <div class="logo-mark">BRICK<span>▸</span>UP</div>
+  </div>
+  <div class="subtitle" id="date-badge">試合動画アップロード支援</div>
+  <div class="court-line"></div>
+</header>
+
+<main>
+
+  <div class="auth-card" id="auth-card">
+    <p>Googleアカウントでログインして、<br>BRICKチャンネルへの<br>アップロードを開始します。</p>
+    <button class="btn btn-primary" id="signin-btn" disabled>読み込み中…</button>
+  </div>
+
+  <div class="signed-in-bar" id="signed-in-bar">
+    <span><span class="dot"></span><span id="account-email">–</span></span>
+    <button class="btn btn-ghost" id="signout-btn">ログアウト</button>
+  </div>
+
+  <div id="app-body">
+
+    <div class="section-title">1. 動画を選ぶ</div>
+    <div class="drop-zone" id="drop-zone">
+      <div class="icon">🏐</div>
+      <p><strong>タップして動画を選択</strong></p>
+      <p>複数選択できます</p>
+      <input type="file" id="file-input" accept="video/*" multiple>
+    </div>
+
+    <div class="section-title">2. 共通の設定</div>
+    <div class="config-card">
+      <div class="field">
+        <label for="match-date">活動日</label>
+        <input type="date" id="match-date">
+      </div>
+
+      <div class="field">
+        <label for="visibility">公開設定</label>
+        <div class="visibility-toggle" id="visibility-toggle">
+          <button type="button" class="vis-btn" data-val="public">公開</button>
+          <button type="button" class="vis-btn selected" data-val="unlisted">限定公開</button>
+          <button type="button" class="vis-btn" data-val="private">非公開</button>
+        </div>
+      </div>
+
+      <div class="field" style="margin-bottom:0;">
+        <label for="playlist-select">再生リスト</label>
+        <div class="playlist-row">
+          <select id="playlist-select">
+            <option value="">再生リストを読み込み中…</option>
+          </select>
+          <button type="button" class="btn btn-ghost" id="new-playlist-btn">＋新規</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">3. 動画リスト・タイトル確認</div>
+    <div class="queue" id="queue"></div>
+
+    <div class="upload-bar">
+      <button class="btn btn-primary" id="upload-btn" disabled>動画を選んでください</button>
+    </div>
+
+  </div>
+
+  <div class="footer-note">
+    BRICK 内部運営ツール ／ このページはあなたのブラウザから<br>直接 YouTube へアップロードします（外部サーバー非経由）
+  </div>
+
+</main>
+
+<script>
+/* =========================================================
+   BRICK アップローダー
+   - Google Identity Services (GIS) でOAuth
+   - YouTube Data API v3 で resumable upload
+   - すべてブラウザ内で完結（外部サーバーなし）
+   ========================================================= */
+
+const CLIENT_ID = "10431076749-pt9snr70obv6dhhgf1pml5d4pr636jih.apps.googleusercontent.com";
+const SCOPES = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly";
+
+let accessToken = null;
+let tokenClient = null;
+let selectedFiles = []; // {file, id, matchNum}
+let currentVisibility = "unlisted";
+
+/* ---------- GIS 読み込み ---------- */
+function loadGis(){
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client";
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+async function initAuth(){
+  await loadGis();
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    callback: async (resp) => {
+      if(resp.error){
+        alert("ログインに失敗しました: " + resp.error);
+        return;
+      }
+      accessToken = resp.access_token;
+      onSignedIn();
+    }
+  });
+  const btn = document.getElementById("signin-btn");
+  btn.disabled = false;
+  btn.textContent = "Googleでログイン";
+}
+
+document.getElementById("signin-btn").addEventListener("click", () => {
+  tokenClient.requestAccessToken({ prompt: "" });
+});
+
+document.getElementById("signout-btn").addEventListener("click", () => {
+  if(accessToken){
+    google.accounts.oauth2.revoke(accessToken, () => {});
+  }
+  accessToken = null;
+  document.getElementById("auth-card").style.display = "block";
+  document.getElementById("signed-in-bar").classList.remove("active");
+  document.getElementById("app-body").classList.remove("active");
+});
+
+async function onSignedIn(){
+  document.getElementById("auth-card").style.display = "none";
+  document.getElementById("signed-in-bar").classList.add("active");
+  document.getElementById("app-body").classList.add("active");
+
+  try{
+    const res = await fetch("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true", {
+      headers: { Authorization: "Bearer " + accessToken }
+    });
+    const data = await res.json();
+    const name = data.items?.[0]?.snippet?.title || "接続済み";
+    document.getElementById("account-email").textContent = name;
+  }catch(e){
+    document.getElementById("account-email").textContent = "接続済み";
+  }
+
+  loadPlaylists();
+}
+
+/* ---------- 再生リスト ---------- */
+async function loadPlaylists(){
+  const sel = document.getElementById("playlist-select");
+  sel.innerHTML = `<option value="">読み込み中…</option>`;
+  try{
+    const res = await fetch("https://www.googleapis.com/youtube/v3/playlists?part=snippet&mine=true&maxResults=50", {
+      headers: { Authorization: "Bearer " + accessToken }
+    });
+    const data = await res.json();
+    sel.innerHTML = `<option value="">（追加しない）</option>`;
+    (data.items || []).forEach(pl => {
+      const opt = document.createElement("option");
+      opt.value = pl.id;
+      opt.textContent = pl.snippet.title;
+      sel.appendChild(opt);
+    });
+  }catch(e){
+    sel.innerHTML = `<option value="">読み込みに失敗しました</option>`;
+  }
+}
+
+document.getElementById("new-playlist-btn").addEventListener("click", async () => {
+  const title = prompt("新しい再生リスト名を入力してください");
+  if(!title) return;
+  const btn = document.getElementById("new-playlist-btn");
+  btn.disabled = true;
+  btn.textContent = "作成中…";
+  try{
+    const res = await fetch("https://www.googleapis.com/youtube/v3/playlists?part=snippet,status", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + accessToken,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        snippet: { title: title },
+        status: { privacyStatus: "unlisted" }
+      })
+    });
+    const data = await res.json();
+    if(data.id){
+      await loadPlaylists();
+      document.getElementById("playlist-select").value = data.id;
+    }else{
+      alert("再生リストの作成に失敗しました");
+    }
+  }catch(e){
+    alert("再生リストの作成に失敗しました: " + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = "＋新規";
+});
+
+/* ---------- 公開設定トグル ---------- */
+document.querySelectorAll(".vis-btn").forEach(b => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".vis-btn").forEach(x => x.classList.remove("selected"));
+    b.classList.add("selected");
+    currentVisibility = b.dataset.val;
+  });
+});
+
+/* ---------- 日付初期値 ---------- */
+const today = new Date();
+document.getElementById("match-date").value = today.toISOString().slice(0,10);
+
+/* ---------- ファイル選択 ---------- */
+const dropZone = document.getElementById("drop-zone");
+const fileInput = document.getElementById("file-input");
+
+dropZone.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", (e) => addFiles(Array.from(e.target.files)));
+
+["dragover","dragenter"].forEach(evt => {
+  dropZone.addEventListener(evt, (e) => { e.preventDefault(); dropZone.classList.add("dragover"); });
+});
+["dragleave","drop"].forEach(evt => {
+  dropZone.addEventListener(evt, (e) => { e.preventDefault(); dropZone.classList.remove("dragover"); });
+});
+dropZone.addEventListener("drop", (e) => {
+  const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("video/"));
+  addFiles(files);
+});
+
+function addFiles(files){
+  files.forEach(file => {
+    selectedFiles.push({
+      file,
+      id: crypto.randomUUID(),
+      matchNum: selectedFiles.length + 1
+    });
+  });
+  renderQueue();
+}
+
+function removeFile(id){
+  selectedFiles = selectedFiles.filter(f => f.id !== id);
+  renderQueue();
+}
+
+function dateLabel(){
+  const v = document.getElementById("match-date").value;
+  return v ? v.replaceAll("-","") : "YYYYMMDD";
+}
+
+document.getElementById("match-date").addEventListener("change", renderQueue);
+
+function renderQueue(){
+  const queue = document.getElementById("queue");
+  queue.innerHTML = "";
+  const dateStr = dateLabel();
+
+  selectedFiles.forEach((item, idx) => {
+    const card = document.createElement("div");
+    card.className = "video-card";
+    card.dataset.id = item.id;
+    card.innerHTML = `
+      <div class="video-card-top">
+        <div class="video-num">${idx+1}</div>
+        <div class="video-fname">${item.file.name}</div>
+        <button class="video-remove" data-remove="${item.id}">✕</button>
+      </div>
+      <div class="title-preview">
+        <span class="fixed">${dateStr} 試合</span>
+        <input type="number" min="1" value="${item.matchNum}" data-num="${item.id}">
+      </div>
+      <div class="progress-track" data-progress="${item.id}"><div class="progress-fill"></div></div>
+      <div class="status-line" data-status="${item.id}"></div>
+    `;
+    queue.appendChild(card);
+  });
+
+  queue.querySelectorAll("[data-remove]").forEach(btn => {
+    btn.addEventListener("click", () => removeFile(btn.dataset.remove));
+  });
+  queue.querySelectorAll("[data-num]").forEach(inp => {
+    inp.addEventListener("input", () => {
+      const item = selectedFiles.find(f => f.id === inp.dataset.num);
+      if(item) item.matchNum = parseInt(inp.value || "1", 10);
+    });
+  });
+
+  const uploadBtn = document.getElementById("upload-btn");
+  if(selectedFiles.length === 0){
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = "動画を選んでください";
+  }else{
+    uploadBtn.disabled = false;
+    uploadBtn.textContent = `${selectedFiles.length}本の動画をアップロード`;
+  }
+}
+
+/* ---------- アップロード本体 ---------- */
+document.getElementById("upload-btn").addEventListener("click", uploadAll);
+
+async function uploadAll(){
+  const uploadBtn = document.getElementById("upload-btn");
+  uploadBtn.disabled = true;
+  const dateStr = dateLabel();
+  const playlistId = document.getElementById("playlist-select").value;
+
+  for(const item of selectedFiles){
+    const title = `${dateStr} 試合 ${item.matchNum}`;
+    await uploadOne(item, title, playlistId);
+  }
+
+  uploadBtn.textContent = "すべて完了しました";
+}
+
+function uploadOne(item, title, playlistId){
+  return new Promise((resolve) => {
+    const statusEl = document.querySelector(`[data-status="${item.id}"]`);
+    const progressTrack = document.querySelector(`[data-progress="${item.id}"]`);
+    const progressFill = progressTrack.querySelector(".progress-fill");
+    progressTrack.classList.add("active");
+    statusEl.classList.add("active");
+    statusEl.textContent = "アップロード準備中…";
+
+    const metadata = {
+      snippet: { title: title, description: "" },
+      status: { privacyStatus: currentVisibility }
+    };
+
+    const xhrInit = new XMLHttpRequest();
+    xhrInit.open("POST", "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status");
+    xhrInit.setRequestHeader("Authorization", "Bearer " + accessToken);
+    xhrInit.setRequestHeader("Content-Type", "application/json; charset=UTF-8");
+    xhrInit.setRequestHeader("X-Upload-Content-Type", item.file.type || "video/mp4");
+    xhrInit.setRequestHeader("X-Upload-Content-Length", item.file.size);
+
+    xhrInit.onload = () => {
+      if(xhrInit.status !== 200){
+        statusEl.textContent = "エラー: アップロードを開始できませんでした";
+        statusEl.classList.add("error");
+        resolve();
+        return;
+      }
+      const uploadUrl = xhrInit.getResponseHeader("Location");
+      doUpload(uploadUrl, item, statusEl, progressFill, playlistId, resolve);
+    };
+    xhrInit.onerror = () => {
+      statusEl.textContent = "エラー: 通信に失敗しました";
+      statusEl.classList.add("error");
+      resolve();
+    };
+    xhrInit.send(JSON.stringify(metadata));
+  });
+}
+
+function doUpload(uploadUrl, item, statusEl, progressFill, playlistId, resolve){
+  const xhr = new XMLHttpRequest();
+  xhr.open("PUT", uploadUrl);
+  xhr.setRequestHeader("Content-Type", item.file.type || "video/mp4");
+
+  xhr.upload.onprogress = (e) => {
+    if(e.lengthComputable){
+      const pct = Math.round((e.loaded / e.total) * 100);
+      progressFill.style.width = pct + "%";
+      statusEl.textContent = `アップロード中… ${pct}%`;
+    }
+  };
+
+  xhr.onload = async () => {
+    if(xhr.status === 200 || xhr.status === 201){
+      const video = JSON.parse(xhr.responseText);
+      statusEl.textContent = "完了しました";
+      statusEl.classList.add("done");
+      progressFill.style.width = "100%";
+
+      if(playlistId){
+        statusEl.textContent = "再生リストに追加中…";
+        try{
+          await fetch("https://www.googleapis.com/youtube/v3/playlistItems?part=snippet", {
+            method: "POST",
+            headers: {
+              Authorization: "Bearer " + accessToken,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              snippet: {
+                playlistId: playlistId,
+                resourceId: { kind: "youtube#video", videoId: video.id }
+              }
+            })
+          });
+          statusEl.textContent = "完了しました（再生リスト追加済み）";
+        }catch(e){
+          statusEl.textContent = "完了しました（再生リスト追加は失敗）";
+        }
+      }
+    }else{
+      statusEl.textContent = "エラー: アップロードに失敗しました";
+      statusEl.classList.add("error");
+    }
+    resolve();
+  };
+  xhr.onerror = () => {
+    statusEl.textContent = "エラー: 通信に失敗しました";
+    statusEl.classList.add("error");
+    resolve();
+  };
+  xhr.send(item.file);
+}
+
+/* ---------- 起動 ---------- */
+initAuth();
+</script>
+
+</body>
+</html>
