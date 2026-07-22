@@ -414,7 +414,8 @@
    ========================================================= */
 
 const CLIENT_ID = "10431076749-pt9snr70obv6dhhgf1pml5d4pr636jih.apps.googleusercontent.com";
-const SCOPES = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly";
+const SCOPES = "https://www.googleapis.com/auth/youtube.force-ssl";
+const CHANNEL_ID = "UC4HJCEtqf0GJv3sD_GrLWqQ";
 
 let accessToken = null;
 let tokenClient = null;
@@ -471,7 +472,7 @@ async function onSignedIn(){
   document.getElementById("app-body").classList.add("active");
 
   try{
-    const res = await fetch("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true", {
+    const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=snippet&id=${CHANNEL_ID}`, {
       headers: { Authorization: "Bearer " + accessToken }
     });
     const data = await res.json();
@@ -489,7 +490,7 @@ async function loadPlaylists(){
   const sel = document.getElementById("playlist-select");
   sel.innerHTML = `<option value="">読み込み中…</option>`;
   try{
-    const res = await fetch("https://www.googleapis.com/youtube/v3/playlists?part=snippet&mine=true&maxResults=50", {
+    const res = await fetch(`https://www.googleapis.com/youtube/v3/playlists?part=snippet&channelId=${CHANNEL_ID}&maxResults=50`, {
       headers: { Authorization: "Bearer " + accessToken }
     });
     const data = await res.json();
