@@ -282,8 +282,7 @@
     font-variant-numeric: tabular-nums;
     font-size: 14.5px;
     font-weight: 700;
-    background: var(--court-navy);
-    border-radius: 8px;
+    background: var(--court-navy);    border-radius: 8px;
     padding: 10px 12px;
     display:flex;
     align-items:center;
@@ -292,8 +291,8 @@
   }
   .title-preview .fixed{ color: var(--mute-gray); }
   .title-preview input{
-    width: 52px;
-    padding: 4px 6px;
+    width: 40px;
+    padding: 4px 2px;
     text-align:center;
     background: var(--court-navy-light);
     border: 1px solid var(--border-soft);
@@ -302,6 +301,54 @@
     font-weight: 900;
     font-size: 14.5px;
     font-family: inherit;
+    /* ブラウザ標準のスピナー（上下矢印）は非表示にし、独自の＋－ボタンに統一する */
+    -moz-appearance: textfield;
+  }
+  .title-preview input::-webkit-outer-spin-button,
+  .title-preview input::-webkit-inner-spin-button{
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .num-stepper{
+    display:inline-flex;
+    align-items:center;
+    gap: 2px;
+  }
+  .num-btn{
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    border: 1px solid var(--border-soft);
+    background: var(--court-navy-light);
+    color: var(--line-white);
+    font-size: 15px;
+    font-weight: 700;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-shrink:0;
+    line-height:1;
+    padding:0;
+  }
+  .num-btn:hover{ border-color: var(--ball-orange); color: var(--ball-orange); }
+  .num-btn:active{ transform: scale(0.92); }
+
+  .playlist-reload-btn{
+    width: 42px;
+    flex-shrink:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size: 15px;
+    padding: 0;
+  }
+  .playlist-reload-btn.spinning{
+    animation: spin-reload 0.7s linear infinite;
+  }
+  @keyframes spin-reload{
+    from{ transform: rotate(0deg); }
+    to{ transform: rotate(360deg); }
   }
 
   .progress-track{
@@ -404,6 +451,7 @@
           <select id="playlist-select">
             <option value="">再生リストを読み込み中…</option>
           </select>
+          <button type="button" class="btn btn-ghost playlist-reload-btn" id="reload-playlist-btn" title="再生リストを再読み込み">⟳</button>
           <button type="button" class="btn btn-ghost" id="new-playlist-btn">＋新規</button>
         </div>
       </div>
@@ -507,6 +555,7 @@ async function onSignedIn(){
 /* ---------- 再生リスト ---------- */
 async function loadPlaylists(){
   const sel = document.getElementById("playlist-select");
+  const keepValue = sel.value; // リロード後も可能な限り同じ選択を維持する
   sel.innerHTML = `<option value="">読み込み中…</option>`;
   try{
     const res = await fetch(`https://www.googleapis.com/youtube/v3/playlists?part=snippet&channelId=${CHANNEL_ID}&maxResults=50`, {
@@ -520,10 +569,22 @@ async function loadPlaylists(){
       opt.textContent = pl.snippet.title;
       sel.appendChild(opt);
     });
+    if(keepValue && sel.querySelector(`option[value="${keepValue}"]`)){
+      sel.value = keepValue;
+    }
   }catch(e){
     sel.innerHTML = `<option value="">読み込みに失敗しました</option>`;
   }
 }
+
+document.getElementById("reload-playlist-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("reload-playlist-btn");
+  btn.disabled = true;
+  btn.classList.add("spinning");
+  await loadPlaylists();
+  btn.classList.remove("spinning");
+  btn.disabled = false;
+});
 
 document.getElementById("new-playlist-btn").addEventListener("click", async () => {
   const title = prompt("新しい再生リスト名を入力してください");
@@ -644,6 +705,15 @@ function removeFile(id){
   renderQueue();
 }
 
+function stepMatchNum(id, delta){
+  const item = selectedFiles.find(f => f.id === id);
+  if(!item) return;
+  const next = Math.max(1, (item.matchNum || 1) + delta);
+  item.matchNum = next;
+  const inp = document.querySelector(`input[data-num="${id}"]`);
+  if(inp) inp.value = next;
+}
+
 function dateLabel(){
   const v = document.getElementById("match-date").value;
   return v ? v.replaceAll("-","") : "YYYYMMDD";
@@ -675,7 +745,11 @@ function renderQueue(){
       </div>
       <div class="title-preview">
         <span class="fixed">${dateStr} 試合</span>
-        <input type="number" min="1" value="${item.matchNum}" data-num="${item.id}">
+        <div class="num-stepper">
+          <button type="button" class="num-btn" data-decr="${item.id}">－</button>
+          <input type="number" min="1" value="${item.matchNum}" data-num="${item.id}">
+          <button type="button" class="num-btn" data-incr="${item.id}">＋</button>
+        </div>
       </div>
       <div class="progress-track" data-progress="${item.id}"><div class="progress-fill"></div></div>
       <div class="status-line" data-status="${item.id}"></div>
@@ -691,6 +765,12 @@ function renderQueue(){
       const item = selectedFiles.find(f => f.id === inp.dataset.num);
       if(item) item.matchNum = parseInt(inp.value || "1", 10);
     });
+  });
+  queue.querySelectorAll("[data-incr]").forEach(btn => {
+    btn.addEventListener("click", () => stepMatchNum(btn.dataset.incr, 1));
+  });
+  queue.querySelectorAll("[data-decr]").forEach(btn => {
+    btn.addEventListener("click", () => stepMatchNum(btn.dataset.decr, -1));
   });
 
   const uploadBtn = document.getElementById("upload-btn");
