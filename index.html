@@ -1,4 +1,51 @@
 <!DOCTYPE html>
+<!--
+=====================================================================
+BRICK アップローダー（brick-uploader）
+
+【概要】
+バレーボールチームBRICKの試合・練習動画を、スマホ/PCのブラウザから
+直接YouTubeへ一括アップロードするための内部運営ツール。
+サーバーを介さず、ブラウザ内で完結する構成（GitHub Pages上で静的
+ホスティング）。
+
+【主な機能】
+- Google Identity Services (GIS) によるOAuth認証（BRICKチャンネル
+  への書き込み権限 youtube.force-ssl）
+- 複数動画の一括選択・一括アップロード
+- タイトル自動生成（"YYYYMMDD 試合 N" 形式、Nは＋－ボタンまたは
+  直接入力で手動調整可）
+- 公開設定（公開／限定公開／非公開）の一括指定
+- 既存再生リストへの追加、または新規作成
+- 各動画のファイル名・長さ・更新日時・サイズの一覧表示
+- アップロード中のスリープ防止（Wake Lock API）
+- 選択直後、動画を撮影日時(ファイル更新日時)の昇順に自動並び替え
+
+【技術構成】
+- 認証: Google Identity Services (トークンクライアント方式)
+- API: YouTube Data API v3 (resumable upload)
+- チャンネルはブランドアカウント想定のため、mine=trueではなく
+  CHANNEL_ID / channelId を明示指定して操作している
+  （個人アカウント配下のブランドチャンネルでmine=trueが
+  期待通り解決されない問題への対応）
+
+【既知の制約】
+- GitHub PagesはCross-Origin-Isolationヘッダーを設定できないため、
+  SharedArrayBufferを要するライブラリ（ffmpeg.wasm等）は
+  このツールでは使用していない
+- テスト中のOAuthアプリのため、Googleの「このアプリは確認されて
+  いません」画面が表示されることがある（想定通りの挙動）
+
+【修正履歴】
+- v1.0.0 : 初版。動画選択・アップロード・再生リスト連携の基本機能
+- v1.1.0 : 各動画のファイル名・長さ・更新日時・サイズを一覧表示
+- v1.2.0 : 連番を＋－ボタンで増減可能に変更
+           再生リストのリロードボタンを追加（選択状態を維持）
+- v1.3.0 : アップロード中のスリープ防止(Wake Lock API)を追加
+           動画選択時に撮影日時(ファイル更新日時)昇順で自動ソート
+           バージョン表記をフッターに追加
+=====================================================================
+-->
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -467,7 +514,8 @@
   </div>
 
   <div class="footer-note">
-    BRICK 内部運営ツール ／ このページはあなたのブラウザから<br>直接 YouTube へアップロードします（外部サーバー非経由）
+    BRICK 内部運営ツール ／ このページはあなたのブラウザから<br>直接 YouTube へアップロードします（外部サーバー非経由）<br>
+    <span id="version-tag" style="opacity:0.6;">v-.-.-</span>
   </div>
 
 </main>
@@ -483,6 +531,20 @@
 const CLIENT_ID = "10431076749-pt9snr70obv6dhhgf1pml5d4pr636jih.apps.googleusercontent.com";
 const SCOPES = "https://www.googleapis.com/auth/youtube.force-ssl";
 const CHANNEL_ID = "UC4HJCEtqf0GJv3sD_GrLWqQ";
+
+// バージョン表記: 修正のたびに更新し、フッターとConsoleの両方に表示する。
+// 「更新が反映されているか分からない」を防ぐための目印。
+const APP_VERSION = "v1.3.0 (2026-07-25 スリープ防止・日時順ソート対応)";
+console.log(`[BRICK-Uploader] ${APP_VERSION}`);
+function applyVersionTag(){
+  const tag = document.getElementById("version-tag");
+  if(tag) tag.textContent = APP_VERSION;
+}
+if(document.readyState === "loading"){
+  document.addEventListener("DOMContentLoaded", applyVersionTag);
+}else{
+  applyVersionTag();
+}
 
 let accessToken = null;
 let tokenClient = null;
@@ -685,11 +747,19 @@ async function addFiles(files){
   const newItems = files.map(file => ({
     file,
     id: crypto.randomUUID(),
-    matchNum: selectedFiles.length + 1,
+    matchNum: 1, // 後段のソート＋振り直しで確定させる
     duration: null,
     modifiedAt: file.lastModified
   }));
   selectedFiles.push(...newItems);
+
+  // 撮影日時(ファイル更新日時)の昇順に並び替える。
+  // スマホでの連続撮影・複数カメラでの録画順を、選択順に依らず
+  // 実際に撮られた順番で一覧表示するための対応。
+  selectedFiles.sort((a, b) => a.modifiedAt - b.modifiedAt);
+  // 並び替え後の順番に合わせて連番(試合N)も振り直す
+  selectedFiles.forEach((item, idx) => { item.matchNum = idx + 1; });
+
   renderQueue();
 
   // 動画の長さは非同期取得のため、取れ次第カードを更新する
@@ -783,6 +853,47 @@ function renderQueue(){
   }
 }
 
+/* ---------- 画面スリープ防止（Wake Lock API） ---------- */
+// アップロード中に画面が消灯・スリープすると、Androidの一部機種では
+// バックグラウンドの通信が絞られ、アップロードが途中で止まることがある。
+// Wake Lock APIで「画面をつけたままにする」指示を出し、これを防ぐ。
+// 対応ブラウザ: Android Chrome等（未対応ブラウザでは何もせず素通りする）
+let wakeLock = null;
+
+async function acquireWakeLock(){
+  if(!("wakeLock" in navigator)){
+    console.log("[BRICK-Uploader] このブラウザはWake Lock APIに対応していません（スリープ防止なしで続行）");
+    return;
+  }
+  try{
+    wakeLock = await navigator.wakeLock.request("screen");
+    console.log("[BRICK-Uploader] 画面スリープを防止しました");
+    wakeLock.addEventListener("release", () => {
+      console.log("[BRICK-Uploader] Wake Lockが解放されました");
+    });
+  }catch(e){
+    // バッテリー低下時などブラウザ側の判断で拒否されることがあるが、
+    // アップロード自体は続行できるためエラーにはしない
+    console.warn("[BRICK-Uploader] Wake Lockの取得に失敗しました:", e.message);
+  }
+}
+
+async function releaseWakeLock(){
+  if(wakeLock){
+    try{ await wakeLock.release(); }catch(e){ /* 既に解放済みなら無視 */ }
+    wakeLock = null;
+  }
+}
+
+// タブがバックグラウンドから復帰した際、Wake Lockが自動解除されている
+// ことがあるため、アップロード中であれば再取得を試みる
+let uploadInProgress = false;
+document.addEventListener("visibilitychange", async () => {
+  if(document.visibilityState === "visible" && uploadInProgress && !wakeLock){
+    await acquireWakeLock();
+  }
+});
+
 /* ---------- アップロード本体 ---------- */
 document.getElementById("upload-btn").addEventListener("click", uploadAll);
 
@@ -792,12 +903,19 @@ async function uploadAll(){
   const dateStr = dateLabel();
   const playlistId = document.getElementById("playlist-select").value;
 
-  for(const item of selectedFiles){
-    const title = `${dateStr} 試合 ${item.matchNum}`;
-    await uploadOne(item, title, playlistId);
-  }
+  uploadInProgress = true;
+  await acquireWakeLock();
 
-  uploadBtn.textContent = "すべて完了しました";
+  try{
+    for(const item of selectedFiles){
+      const title = `${dateStr} 試合 ${item.matchNum}`;
+      await uploadOne(item, title, playlistId);
+    }
+    uploadBtn.textContent = "すべて完了しました";
+  }finally{
+    uploadInProgress = false;
+    await releaseWakeLock();
+  }
 }
 
 function uploadOne(item, title, playlistId){
